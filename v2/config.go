@@ -1,6 +1,9 @@
 package cookieguard
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/colduction/cookieguard-go/internal/core"
+	"github.com/gofiber/fiber/v2"
+)
 
 // Config defines the config for middleware.
 type Config struct {
@@ -49,6 +52,8 @@ type Config struct {
 	//
 	// Optional. Default: false
 	SkipUnencryptedCookies bool
+
+	options core.Options
 }
 
 // ConfigDefault is the default config
@@ -67,11 +72,17 @@ var ConfigDefault = Config{
 // Helper function to set default values
 func configDefault(config ...Config) Config {
 	// Set default config
-	cfg := ConfigDefault
+	var (
+		cfg                 = ConfigDefault
+		useDefaultEncryptor = true
+		useDefaultDecryptor = true
+	)
 
 	// Override config if provided
 	if len(config) > 0 {
 		cfg = config[0]
+		useDefaultEncryptor = cfg.Encryptor == nil
+		useDefaultDecryptor = cfg.Decryptor == nil
 
 		// Set default values
 
@@ -95,6 +106,25 @@ func configDefault(config ...Config) Config {
 	if len(cfg.Key) == 0 {
 		panic("fiber: cookie guard middleware requires key")
 	}
+
+	options, err := core.NewOptions(
+		cfg.Key,
+		cfg.Except,
+		cfg.Encryptor,
+		cfg.Decryptor,
+		cfg.EncryptKeys,
+		cfg.EncryptValues,
+		cfg.SuppressErrors,
+		cfg.SkipUnencryptedCookies,
+		useDefaultEncryptor,
+		useDefaultDecryptor,
+	)
+	if err != nil {
+		panic(err)
+	}
+	cfg.Encryptor = options.Encryptor
+	cfg.Decryptor = options.Decryptor
+	cfg.options = options
 
 	return cfg
 }
