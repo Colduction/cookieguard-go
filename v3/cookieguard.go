@@ -1,30 +1,29 @@
 package cookieguard
 
 import (
+	"sync/atomic"
+
 	"github.com/colduction/cookieguard-go/internal/core"
 	"github.com/gofiber/fiber/v3"
 )
 
 // New creates a new middleware handler
 func New(config ...Config) fiber.Handler {
-	// Set default config
-	cfg := configDefault(config...)
-	options := cfg.options
+	var (
+		cfg  = configDefault(config...)
+		opts atomic.Pointer[core.Options]
+	)
+	opts.Store(&cfg.options)
 
-	// Return new handler
 	return func(c fiber.Ctx) error {
-		// Skip middleware if Next returns true
 		if cfg.Next != nil && cfg.Next(c) {
 			return c.Next()
 		}
 
-		core.DecryptRequestCookies(&c.Request().Header, options)
-
-		// Continue stack
+		o := opts.Load()
+		core.DecryptRequestCookies(&c.Request().Header, o)
 		err := c.Next()
-
-		core.EncryptResponseCookies(&c.Response().Header, options)
-
+		core.EncryptResponseCookies(&c.Response().Header, o)
 		return err
 	}
 }

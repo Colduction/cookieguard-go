@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"sync"
 
 	aes "github.com/colduction/aes-go"
 )
@@ -14,6 +15,9 @@ const nonceSize int = 12
 var (
 	errInvalidEncryptedData = errors.New("encrypted data is not valid")
 	zeroNonce               [nonceSize]byte
+	encryptBufPool          = sync.Pool{
+		New: func() any { b := make([]byte, 0, 128); return &b },
+	}
 )
 
 type Cryptor func(message, key []byte) ([]byte, error)
@@ -39,37 +43,50 @@ func (c *CookieCodec) Decrypt(data, _ []byte) ([]byte, error) {
 }
 
 func EncryptCookie(data, key []byte) ([]byte, error) {
-	codec, err := NewCookieCodec(key)
+	aead, err := aes.NewGCM(key, zeroNonce[:], nil)
 	if err != nil {
 		return nil, err
 	}
-	return encryptCookie(codec.aead, data)
+	return encryptCookie(aead, data)
 }
 
 func encryptCookie(aead aes.AEADCipher, data []byte) ([]byte, error) {
-	rawLen := nonceSize + len(data) + aead.Overhead()
-	raw := make([]byte, nonceSize, rawLen)
+	var (
+		rawLen = nonceSize + len(data) + aead.Overhead()
+		bp     = encryptBufPool.Get().(*[]byte)
+		raw    = *bp
+	)
+	if cap(raw) < rawLen {
+		raw = make([]byte, nonceSize, rawLen)
+	} else {
+		raw = raw[:nonceSize]
+	}
 	if _, err := io.ReadFull(rand.Reader, raw); err != nil {
+		*bp = raw[:0]
+		encryptBufPool.Put(bp)
 		return nil, err
 	}
-
 	raw = aead.Seal(raw, raw[:nonceSize], data, nil)
 	encoded := make([]byte, base64.RawURLEncoding.EncodedLen(len(raw)))
 	base64.RawURLEncoding.Encode(encoded, raw)
+	*bp = raw[:0]
+	encryptBufPool.Put(bp)
 	return encoded, nil
 }
 
 func DecryptCookie(data, key []byte) ([]byte, error) {
-	codec, err := NewCookieCodec(key)
+	aead, err := aes.NewGCM(key, zeroNonce[:], nil)
 	if err != nil {
 		return nil, err
 	}
-	return decryptCookie(codec.aead, data)
+	return decryptCookie(aead, data)
 }
 
 func decryptCookie(aead aes.AEADCipher, data []byte) ([]byte, error) {
-	decoded := make([]byte, base64.RawURLEncoding.DecodedLen(len(data)))
-	n, err := base64.RawURLEncoding.Decode(decoded, data)
+	var (
+		decoded = make([]byte, base64.RawURLEncoding.DecodedLen(len(data)))
+		n, err  = base64.RawURLEncoding.Decode(decoded, data)
+	)
 	if err != nil {
 		return nil, err
 	}
