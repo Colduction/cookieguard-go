@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/colduction/aes-go v1.12.0
-	github.com/gofiber/fiber/v2 v2.52.9
+	github.com/gofiber/fiber/v2 v2.52.14
 	github.com/gofiber/fiber/v3 v3.3.0
 	github.com/valyala/fasthttp v1.71.0
 )
